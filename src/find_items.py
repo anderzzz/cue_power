@@ -8,7 +8,7 @@ from scipy import spatial
 import matplotlib.pyplot as plt
 
 import skimage
-from skimage import io, segmentation, util, filters, color
+from skimage import io, segmentation, util, filters, feature, color
 
 from sklearn.cluster import KMeans 
 from sklearn.utils import shuffle
@@ -51,24 +51,58 @@ class Table:
 
         return ret
 
-    def _cloth_luminance(self):
+    def _create_cloth_luminance(self, squeeze_factor=20.0):
 
         intensity = []
         for rgb_point in self.img_obj.reshape(-1, 3):
-            intensity.append(max(0.0, 
-                1.0 - spatial.distance.euclidean(rgb_point, self.cloth_colour)))
+            d_rgb = spatial.distance.euclidean(rgb_point, self.cloth_colour)
+            clothness = max(1.0 - d_rgb * d_rgb * squeeze_factor, 0.0)
+            intensity.append(clothness)
 
-        return np.array(intensity).reshape(self.img_height, self.img_width, 3)
+        return np.array(intensity).reshape(self.img_height, self.img_width)
 
     def _guess_corners(self):
 
-        fig_cloth_lum = self._cloth_luminance()
+        dd = feature.corner_shi_tomasi(self.cloth_luminance)
+        peaks = feature.corner_peaks(dd, min_distance=1)
+
+        #fig_corners = self.img_obj
+        #for pp_x, pp_y in peaks:
+        #    for kk in range(-3,4):
+        #        fig_corners[pp_x + kk][pp_y + kk] = np.array((1.0, 1.0, 0.0))
+        #        fig_corners[pp_x + kk][pp_y - kk] = np.array((1.0, 1.0, 0.0))
+        #io.imsave('dummy2.png', fig_corners)
+
+        d_upper_left_min = self.img_height + self.img_width
+        d_lower_left_min = self.img_height + self.img_width
+        d_upper_right_min = self.img_height + self.img_width
+        d_lower_right_min = self.img_height + self.img_width
+        for pp in peaks:
+            
+            d_upper_left = np.linalg.norm(pp - np.array([0, 0]))
+            d_upper_right = np.linalg.norm(pp - np.array([0, self.img_width]))
+            d_lower_left = np.linalg.norm(pp - np.array([self.img_height, 0]))
+            d_lower_right = np.linalg.norm(pp - np.array([self.img_height, self.img_width]))
+
+            if d_upper_left < d_upper_left_min:
+                d_upper_left_min = d_upper_left
+                c_00 = pp
+            if d_upper_right < d_upper_right_min:
+                d_upper_right_min = d_upper_right
+                c_01 = pp
+            if d_lower_left < d_lower_left_min:
+                d_lower_left_min = d_lower_left
+                c_10 = pp
+            if d_lower_right < d_lower_right_min:
+                d_lower_right_min = d_lower_right
+                c_11 = pp
 
         return c_00, c_01, c_10, c_11
 
     def _optimize_corners(self):
 
         p_00, p_01, p_10, p_11 = self._guess_corners()     
+        print (p_00, p_01, p_10, p_11)
 
     def find_table(self):
 
@@ -125,7 +159,8 @@ class Table:
 
         #
         # Guess the cloth colour
-        self.cloth_color = self._guess_cloth_colour()
+        self.cloth_colour = self._guess_cloth_colour()
+        self.cloth_luminance = self._create_cloth_luminance()
 
         #
         # Guess the corner coordinates
@@ -135,5 +170,5 @@ class Table:
 
 if __name__ == '__main__':
 
-    table = Table('../rawdata/fig_snooker_1.PNG')
+    table = Table('../test_data/fig_snooker_1.PNG')
     table.find_table()
