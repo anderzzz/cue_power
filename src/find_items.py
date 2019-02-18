@@ -24,9 +24,9 @@ class FileFormatError(Exception):
 
 class Table:
 
-    def _guess_cloth_colour(self, precision=2):
+    def _guess_cloth_colour(self, precision=2, cluster_count=5):
 
-        km_cluster = KMeans(n_clusters=5,
+        km_cluster = KMeans(n_clusters=cluster_count,
                             init=np.array([DARK_GREEN, DARK_RED, DARK_BLUE,
                                            BLACK, WHITE]),
                             n_init=1)
@@ -34,14 +34,10 @@ class Table:
         fig_sample = shuffle(self.img_obj.reshape(-1, 3))[:5000]
         km_cluster.fit(fig_sample)
 
-        norm_min = 10.0
-        for c_label, c_centre in enumerate(km_cluster.cluster_centers_):
-            norm = np.linalg.norm(c_centre - np.array(DARK_GREEN))
-
-            if norm < norm_min:
-                norm_min = norm
-                green_centre = c_centre
-                green_label = c_label
+        diff_from_green = km_cluster.cluster_centers_ - \
+                          np.tile(np.array(DARK_GREEN), cluster_count).reshape(-1, 3)
+        diff_from_green_norm = np.array([np.dot(x, x) for x in diff_from_green])
+        green_centre = km_cluster.cluster_centers_[np.argmin(diff_from_green_norm)]
 
         #
         # TODO: Add some checks to ensure image with little green does not pass
@@ -53,25 +49,31 @@ class Table:
 
     def _create_cloth_luminance(self, squeeze_factor=20.0):
 
-        intensity = []
-        for rgb_point in self.img_obj.reshape(-1, 3):
-            d_rgb = spatial.distance.euclidean(rgb_point, self.cloth_colour)
-            clothness = max(1.0 - d_rgb * d_rgb * squeeze_factor, 0.0)
-            intensity.append(clothness)
+        def _intensity_from_norm2(l2):
+            f = 1.0 - l2 * squeeze_factor
+            return max(f, 0.0)
 
-        return np.array(intensity).reshape(self.img_height, self.img_width)
+        diff_from_cloth = self.img_obj.reshape(-1, 3) - \
+                          np.tile(self.cloth_colour, self.img_n_pixels).reshape(-1, 3)
+        diff_from_cloth_l2 = np.sum(np.square(diff_from_cloth), axis=1)
+        v_intensity_from_l2 = np.vectorize(_intensity_from_norm2)
+        intensity = v_intensity_from_l2(diff_from_cloth_l2)
+
+        return intensity.reshape(self.img_height, self.img_width)
 
     def _guess_corners(self):
 
         dd = feature.corner_shi_tomasi(self.cloth_luminance)
         peaks = feature.corner_peaks(dd, min_distance=1)
 
-        #fig_corners = self.img_obj
-        #for pp_x, pp_y in peaks:
-        #    for kk in range(-3,4):
-        #        fig_corners[pp_x + kk][pp_y + kk] = np.array((1.0, 1.0, 0.0))
-        #        fig_corners[pp_x + kk][pp_y - kk] = np.array((1.0, 1.0, 0.0))
-        #io.imsave('dummy2.png', fig_corners)
+        if self.print_intermediate_img:
+
+            fig_corners = self.img_obj
+            for pp_x, pp_y in peaks:
+                for kk in range(-3,4):
+                    fig_corners[pp_x + kk][pp_y + kk] = np.array((1.0, 1.0, 0.0))
+                    fig_corners[pp_x + kk][pp_y - kk] = np.array((1.0, 1.0, 0.0))
+            io.imsave(self.img_out_prefix + '_corners_marked.png', fig_corners)
 
         d_upper_left_min = self.img_height + self.img_width
         d_lower_left_min = self.img_height + self.img_width
@@ -130,7 +132,8 @@ class Table:
         plt.tight_layout()
         plt.savefig('foo.png')
 
-    def __init__(self, img_path):
+    def __init__(self, img_path,
+                 print_intermediate_img=True, img_out_prefix='dummy'):
 
         #
         # Path to file
@@ -156,11 +159,20 @@ class Table:
         self.img_obj = util.img_as_float(rgb_image)
         self.img_height = self.img_obj.shape[0]
         self.img_width = self.img_obj.shape[1]
+        self.img_n_pixels = self.img_height * self.img_width
+
+        #
+        # Debug and constants
+        self.print_intermediate_img = print_intermediate_img
+        self.img_out_prefix = img_out_prefix
 
         #
         # Guess the cloth colour
         self.cloth_colour = self._guess_cloth_colour()
         self.cloth_luminance = self._create_cloth_luminance()
+
+        if self.print_intermediate_img:
+            io.imsave(self.img_out_prefix + '_cloth_luminance.png', self.cloth_luminance)
 
         #
         # Guess the corner coordinates
@@ -171,4 +183,4 @@ class Table:
 if __name__ == '__main__':
 
     table = Table('../test_data/fig_snooker_1.PNG')
-    table.find_table()
+    #table.find_table()
