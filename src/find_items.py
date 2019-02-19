@@ -136,14 +136,49 @@ class Table:
 
         return np.array(line)
 
+    def _make_table_indeces(self, b_l, b_t, b_r, b_b):
+
+        top_most = np.min(b_t, axis=0)[0]
+        bottom_most = np.max(b_b, axis=0)[0]
+        left_most = np.min(b_l, axis=0)[1]
+        right_most = np.max(b_r, axis=0)[1]
+
+        top_least = np.max(b_t, axis=0)[0]
+        bottom_least = np.min(b_b, axis=0)[0]
+        left_least = np.max(b_l, axis=0)[1]
+        right_least = np.min(b_r, axis=0)[1]
+
+        print (top_most, bottom_most, left_most, right_most)
+        print (top_least, bottom_least, left_least, right_least)
+
+        obvious_rectangle = [np.repeat(np.arange(top_least, bottom_least + 1),
+                                                 1 + right_least - left_least),
+                             np.tile(np.arange(left_least, right_least + 1),
+                                               1 + bottom_least - top_least)]
+
+        bounding_rectangle = [np.repeat(np.arange(top_most, bottom_most + 1),
+                                                  1 + right_most - left_most),
+                             np.tile(np.arange(left_most, right_most + 1),
+                                               1 + bottom_most - top_most)]
+
+        xx = self.img_obj[bounding_rectangle[0], bounding_rectangle[1]]
+        xx = xx.reshape(1 + bottom_most - top_most, 1 + right_most - left_most, 3)
+        io.imsave('dummy_crop.png', xx)
+
+
     def _optimize_corners(self):
 
         p_00, p_01, p_10, p_11 = self._guess_corners()     
+        print (p_00, p_01, p_10, p_11)
 
         b_left = self._manhattan_line(p_00, p_10)
         b_top = self._manhattan_line(p_00, p_01)
         b_right = self._manhattan_line(p_01, p_11)
         b_bottom = self._manhattan_line(p_10, p_11)
+
+        print (self.cloth_luminance.shape)
+        table_indeces = self._make_table_indeces(b_left, b_top, b_right, b_bottom)
+
 
     def find_table(self):
 
