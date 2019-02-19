@@ -4,6 +4,7 @@
 import sys
 
 import numpy as np
+import copy
 from scipy import spatial 
 import matplotlib.pyplot as plt
 
@@ -101,10 +102,48 @@ class Table:
 
         return c_00, c_01, c_10, c_11
 
+    def _manhattan_line(self, p_a, p_b):
+
+        diff = p_b - p_a
+        delta = np.abs(diff)
+        sign = np.sign(diff)
+        total_points = sum(delta)
+
+        if delta[0] > delta[1]:
+            slope = delta[1] / total_points
+            major_index = 0
+            minor_index = 1
+
+        else:
+            slope = delta[0] / total_points
+            major_index = 1
+            minor_index = 0
+        
+        p_current = copy.deepcopy(p_a)
+        line = [list(p_current)]
+        k_minor = 0
+        for step in range(0, sum(delta)):
+
+            diff_from_real = step * slope - k_minor
+            if diff_from_real > 0.5:
+                p_current[minor_index] += sign[minor_index]
+                k_minor += 1
+
+            else:
+                p_current[major_index] += sign[major_index]
+
+            line.append(list(p_current))
+
+        return np.array(line)
+
     def _optimize_corners(self):
 
         p_00, p_01, p_10, p_11 = self._guess_corners()     
-        print (p_00, p_01, p_10, p_11)
+
+        b_left = self._manhattan_line(p_00, p_10)
+        b_top = self._manhattan_line(p_00, p_01)
+        b_right = self._manhattan_line(p_01, p_11)
+        b_bottom = self._manhattan_line(p_10, p_11)
 
     def find_table(self):
 
