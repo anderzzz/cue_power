@@ -136,6 +136,46 @@ class Table:
 
         return np.array(line)
 
+    def _make_rectangle(self, horizont_low, horizont_high,
+                              vertical_low, vertical_high):
+
+        if horizont_low == horizont_high or vertical_low == vertical_high:
+            return None
+
+        if horizont_low > horizont_high:
+            raise ValueError('Horizontal high value less than low value')
+        if vertical_low > vertical_high:
+            raise ValueError('Vertical high value less than low value')
+
+        width = np.arange(horizont_low, horizont_high + 1)
+        height = np.arange(vertical_low, vertical_high + 1)
+
+        rectangle = [np.repeat(width, 1 + vertical_high - vertical_low),
+                     np.tile(height, 1 + horizont_high - horizont_low)]
+
+        return rectangle
+
+    def _relative_boundary(self, pixel_pool, criterium, boundary):
+
+        if 'right of' in criterium:
+            tester = lambda x, y: x[1] >= y[1]
+        elif 'left of' in criterium:
+            tester = lambda x, y: x[1] <= y[1]
+        elif 'below' in criterium:
+            tester = lambda x, y: x[0] >= y[0]
+        elif 'above' in criterium:
+            tester = lambda x, y: x[0] <= y[0]
+        else:
+            raise ValueError('Unknown test criterium: {0}'.format(criterium))
+
+        print (pixel_pool)
+        print (boundary)
+
+        raise RuntimeError
+
+        for p_h, p_w in zip(pixel_pool[0], pixel_pool[1]):
+            pass
+
     def _make_table_indeces(self, b_l, b_t, b_r, b_b):
 
         top_most = np.min(b_t, axis=0)[0]
@@ -151,20 +191,23 @@ class Table:
         print (top_most, bottom_most, left_most, right_most)
         print (top_least, bottom_least, left_least, right_least)
 
-        obvious_rectangle = [np.repeat(np.arange(top_least, bottom_least + 1),
-                                                 1 + right_least - left_least),
-                             np.tile(np.arange(left_least, right_least + 1),
-                                               1 + bottom_least - top_least)]
+        obvious_rectangle = self._make_rectangle(top_least, bottom_least,
+                                                 left_least, right_least)
 
-        bounding_rectangle = [np.repeat(np.arange(top_most, bottom_most + 1),
-                                                  1 + right_most - left_most),
-                             np.tile(np.arange(left_most, right_most + 1),
-                                               1 + bottom_most - top_most)]
+        bounding_left = self._make_rectangle(top_most, bottom_most,
+                                             left_most, left_least)
+        bounding_right = self._make_rectangle(top_most, bottom_most,
+                                              right_least, right_most)
+        bounding_top = self._make_rectangle(top_most, top_least,
+                                            left_most, right_most)
+        bounding_bottom = self._make_rectangle(bottom_least, bottom_most,
+                                            left_most, right_most)
+
+        add_to_left = self._relative_boundary(bounding_left, 'right of', b_l)
 
         xx = self.img_obj[bounding_rectangle[0], bounding_rectangle[1]]
         xx = xx.reshape(1 + bottom_most - top_most, 1 + right_most - left_most, 3)
         io.imsave('dummy_crop.png', xx)
-
 
     def _optimize_corners(self):
 
