@@ -67,15 +67,6 @@ class Table:
         dd = feature.corner_shi_tomasi(self.cloth_luminance)
         peaks = feature.corner_peaks(dd, min_distance=1)
 
-        if self.print_intermediate_img:
-
-            fig_corners = self.img_obj
-            for pp_x, pp_y in peaks:
-                for kk in range(-3,4):
-                    fig_corners[pp_x + kk][pp_y + kk] = np.array((1.0, 1.0, 0.0))
-                    fig_corners[pp_x + kk][pp_y - kk] = np.array((1.0, 1.0, 0.0))
-            io.imsave(self.img_out_prefix + '_corners_marked.png', fig_corners)
-
         d_upper_left_min = self.img_height + self.img_width
         d_lower_left_min = self.img_height + self.img_width
         d_upper_right_min = self.img_height + self.img_width
@@ -182,7 +173,7 @@ class Table:
         cloth_pixels_leftright = []
         cloth_pixels_topbottom = []
         shift_point = -1
-        for horizont in range(top_most + 1, bottom_most):
+        for horizont in range(top_most, bottom_most + 1):
 
             if horizont > shift_point:
                 border_a, border_b, shift_point = order.pop(0)
@@ -190,8 +181,8 @@ class Table:
             w_min_a, w_max_a = self._func_boundary(horizont, border_a)
             w_min_b, w_max_b = self._func_boundary(horizont, border_b)
 
-            leftright = np.arange(w_max_a + 1, w_min_b)
-            topbottom = np.repeat([horizont], w_min_b - w_max_a - 1)
+            leftright = np.arange(w_min_a, w_max_b + 1)
+            topbottom = np.repeat([horizont], w_max_b + 1 - w_min_a)
 
             cloth_pixels_leftright.extend(leftright)
             cloth_pixels_topbottom.extend(topbottom)
@@ -205,19 +196,87 @@ class Table:
         return np.min(reduced_points, axis=0)[1], \
                np.max(reduced_points, axis=0)[1]
 
-    def _optimize_corners(self):
+    def _optimize_corners(self, lum_thrs=0.4, max_jump=3, frac_cloth=0.99):
+
+        def eval_state_(p_00, p_01, p_10, p_11):
+
+            b_left = self._manhattan_line(p_00, p_10)
+            b_top = self._manhattan_line(p_00, p_01)
+            b_right = self._manhattan_line(p_01, p_11)
+            b_bottom = self._manhattan_line(p_10, p_11)
+
+            table_indeces = self._make_table_indeces(b_left, b_top, b_right, b_bottom)
+
+            return table_indeces
+
+        def score_(t_indeces):
+
+            cut_luminance = self.cloth_luminance[t_indeces[0], t_indeces[1]]
+            n_clothy_cut = np.count_nonzero(cut_luminance > lum_thrs)
+            n_clothy_all = np.count_nonzero(self.cloth_luminance > lum_thrs)
+
+            return n_clothy_cut / n_clothy_all, len(cut_luminance)
 
         p_00, p_01, p_10, p_11 = self._guess_corners()     
-        print (p_00, p_01, p_10, p_11)
+        table_state = eval_state_(p_00, p_01, p_10, p_11)
+        table_score_current = score_(table_state)
 
-        b_left = self._manhattan_line(p_00, p_10)
-        b_top = self._manhattan_line(p_00, p_01)
-        b_right = self._manhattan_line(p_01, p_11)
-        b_bottom = self._manhattan_line(p_10, p_11)
+        k_iter = 0
+        k_volume_shrink = 0
+        while k_iter < 200:
 
-        print (self.cloth_luminance.shape)
-        table_indeces = self._make_table_indeces(b_left, b_top, b_right, b_bottom)
+            p_00_old = copy.deepcopy(p_00)
+            p_01_old = copy.deepcopy(p_01)
+            p_10_old = copy.deepcopy(p_10)
+            p_11_old = copy.deepcopy(p_11)
 
+            p_00 += np.random.randint(-1 * max_jump, max_jump + 1, 2)
+            p_01 += np.random.randint(-1 * max_jump, max_jump + 1, 2)
+            p_10 += np.random.randint(-1 * max_jump, max_jump + 1, 2)
+            p_11 += np.random.randint(-1 * max_jump, max_jump + 1, 2)
+
+            table_score_new = score_(eval_state_(p_00, p_01, p_10, p_11))
+
+            too_low_frac = table_score_new[0] < frac_cloth
+            lower_frac = table_score_new[0] < table_score_current[0]
+            smaller_table = table_score_new[1] < table_score_current[1]
+            if too_low_frac and (not lower_frac):
+                accept = True
+            elif (not too_low_frac) and smaller_table:
+                accept = True
+            else:
+                accept = False
+
+            if not accept:
+                p_00 = copy.deepcopy(p_00_old)
+                p_01 = copy.deepcopy(p_01_old)
+                p_10 = copy.deepcopy(p_10_old)
+                p_11 = copy.deepcopy(p_11_old)
+
+            else:
+                table_score_current = table_score_new
+
+            k_iter += 1
+            if not too_low_frac:
+                k_volume_shrink += 1
+
+            if k_volume_shrink > 30:
+                break
+
+        else:
+            print ('Warning: did not converge. Fraction: ' + \
+                   '{0}, Volume:{1}'.format(table_score_current[0], table_score_current[1]))
+
+        if self.print_intermediate_img:
+
+            fig_corners = self.img_obj
+            for pp_x, pp_y in [p_00, p_01, p_10, p_11]:
+                for kk in range(-3,4):
+                    fig_corners[pp_x + kk][pp_y + kk] = np.array((1.0, 1.0, 0.0))
+                    fig_corners[pp_x + kk][pp_y - kk] = np.array((1.0, 1.0, 0.0))
+            io.imsave(self.img_out_prefix + '_corners_marked.png', fig_corners)
+
+        return p_00, p_01, p_10, p_11
 
     def find_table(self):
 
@@ -291,6 +350,7 @@ class Table:
         # Guess the corner coordinates
         self.n_corners = 4
         self.corners = self._optimize_corners()
+        print (self.corners)
 
 
 if __name__ == '__main__':
