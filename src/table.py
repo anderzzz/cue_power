@@ -320,6 +320,23 @@ class Table:
 
         return corners_current 
 
+    def find_balls(self, img_path):
+
+        raw_image = io.imread(img_path)
+        rgb_image = color.rgba2rgb(raw_image)
+
+        if self.img_width != rgb_image.shape[1] or \
+           self.img_height != rgb_image.shape[0]:
+            raise RuntimeError('Process image of different dimension ' + \
+                               'than initialization image')
+
+        img_analyze = util.img_as_float(rgb_image)
+
+        img_table = img_analyze[self.table_indeces[0],
+                                self.table_indeces[1]]
+        print (img_table)
+        print (len(img_table))
+
     def __init__(self, img_path,
                  print_intermediate_img=True, img_out_prefix='dummy'):
 
@@ -373,3 +390,4 @@ class Table:
 if __name__ == '__main__':
 
     table = Table('../test_data/fig_snooker_1.PNG')
+    table.find_balls('../test_data/fig_snooker_1.PNG')
