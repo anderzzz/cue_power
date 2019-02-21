@@ -33,7 +33,28 @@ class FileFormatError(Exception):
 class Table:
 
     def _guess_cloth_colour(self, precision=2, cluster_count=5):
+        '''Guess colour of table cloth
 
+        Parameters
+        ----------
+        precision : int, optional
+            Number of decimals to keep in cloth colour RGB vector
+        cluster_count : int, optional
+            Number of clusters to consider in the RGB space
+
+        Returns
+        -------
+        rgb_cloth : tuple
+            The RGB coordinate of the table cloth colour
+
+        Notes
+        -----
+        The plurality of RGB points of the image are clustered. In the typical
+        front-facing perspective of the table, the cloth colour is assumed to
+        (1) be a major object in the view and (2) have a mostly unique and
+        mostly uniform colour green colour. 
+
+        '''
         km_cluster = KMeans(n_clusters=cluster_count,
                             init=np.array([DARK_GREEN, DARK_RED, DARK_BLUE,
                                            BLACK, WHITE]),
@@ -56,7 +77,22 @@ class Table:
         return ret
 
     def _create_cloth_luminance(self, squeeze_factor=20.0):
+        '''Extract luminance image where cloth is selectively illuminated.
 
+        Parameters
+        ----------
+        squeeze_factor : int, optional
+            How selective to be in the cloth colour illumination. The higher
+            the value, the more selective, which comes at the risk that
+            relevant cloth pixels are incorrectly non-illuminated.
+
+        Returns
+        -------
+        intensity : Numpy array
+            The image with intensity values near 1.0 for cloth pixels, 0.0
+            otherwise
+
+        '''
         def _intensity_from_norm2(l2):
             f = 1.0 - l2 * squeeze_factor
             return max(f, 0.0)
@@ -70,7 +106,36 @@ class Table:
         return intensity.reshape(self.img_height, self.img_width)
 
     def _edge_bounding_corners(self, edge_pixels, cluster_thrs=30, slack=5):
+        '''Rapid estimate of the corner coordinates that are bounding the cloth
+        edge, with slight preference towards bounding too much than too little
+        of the edge.
 
+        Parameters
+        ----------
+        edge_pixels : Numpy array
+            Collection of pixels part of the edge.
+        cluster_thrs : int, optional
+            The radius around the extreme edge pixels to define edge pixels to
+            construct the bounding coordinate
+        slack : int, optional
+            The added slack to expand the bounding corners further
+
+        Returns
+        -------
+        corners_guess : ClothCorners
+            The guess of the cloth corners
+
+        Notes
+        -----
+        The method to guess the corners proceed by (1) finding the four points
+        of the edge pixels that are the closest in a Euclidean sense to the
+        four image corners. (2) For each such pixel extract a set of
+        neighbouring pixels. (3) Construct a strong Pareto optimal pixel to the
+        set, in other words, where both coordinates are closer to the relevant
+        corner than any pixel in the set. (4) Add some slack to the coordinates
+        to move closer to the relevant image corner.
+
+        '''
         d_upper_left_min = self.img_height + self.img_width
         d_lower_left_min = self.img_height + self.img_width
         d_upper_right_min = self.img_height + self.img_width
@@ -130,7 +195,23 @@ class Table:
                             c_10_extreme_corner, c_11_extreme_corner)
 
     def _manhattan_line(self, p_a, p_b):
+        '''Construct the line between two pixels. The line is constrained to
+        discrete pixels, hence the method constructs the contiguous path that
+        most closely approximates the continuous interpolating line
 
+        Parameters
+        ----------
+        p_a : Numpy array
+            The first pixel, two coordinates
+        p_b : Numpy array
+            The second pixel, two coordinates
+
+        Returns
+        -------
+        line_pixels : Numpy array
+            The collection of pixels that comprises the discrete line
+
+        '''
         diff = p_b - p_a
         delta = np.abs(diff)
         sign = np.sign(diff)
@@ -164,7 +245,26 @@ class Table:
         return np.array(line)
 
     def _make_table_indeces(self, sides, exclude_boundary=False):
+        '''Construct index arrays for pixels within four sides
 
+        Parameters
+        ----------
+        sides : ClothSides
+            The four sides of the table cloth
+        exclude_boundary : bool, optional
+            If True the index array does not include pixels of the boundary. If
+            False, the index array includes pixels of boundary.
+
+        Returns
+        -------
+        cloth_pixels_topbottom : Numpy array
+            The pixels of the image containing cloth table data, vertical
+            coordinate
+        cloth_pixels_leftright : Numpy array
+            The pixels of the image containing cloth table data, horizontal
+            coordinate
+
+        '''
         top_most = np.min(sides.top, axis=0)[0]
         bottom_most = np.max(sides.down, axis=0)[0]
         top_least = np.max(sides.top, axis=0)[0]
@@ -174,6 +274,9 @@ class Table:
         bottom_right = np.max(sides.right, axis=0)[0]
         bottom_left = np.max(sides.left, axis=0)[0]
 
+        #
+        # Determine between which sides of the cloth a horizontal pixel
+        # scanning, left to right, takes place
         order = []
         if top_right < top_left:
             order.append((sides.top, sides.right, top_least))
@@ -194,6 +297,9 @@ class Table:
             k_low = 0
             k_high = 1
 
+        #
+        # Scan pixels, top to bottom (outer loop), left to right (vectorized
+        # inner loop) constrained to be between the relevant pair of sides.
         cloth_pixels_leftright = []
         cloth_pixels_topbottom = []
         shift_point = -1
@@ -231,7 +337,43 @@ class Table:
                np.max(reduced_points, axis=0)[1]
 
     def _optimize_corners(self, max_jump=4, max_steps=300, break_step=40, temp_init=1000.0): 
+        '''Determine optimal table corner positions in image
 
+        Parameters
+        ----------
+        max_jump : int, optional
+            Maximum jump along a dimension for the corner pixel as it is
+            optimized.
+        max_steps : int, optional
+            Maximum number of optimization steps
+        break_step : int, optional
+            Number of consequtive steps without a new solution obtained that
+            triggers an early stop to the optimization.
+        temp_init : float, optional
+            The initial temperature in the Simulated Annealing
+
+        Returns
+        -------
+        corners : ClothCorners
+            The optimal cloth corners
+
+        Notes
+        -----
+        The optimization uses a Simulated Annealing method, randomly perturbing
+        one corner at a time. 
+
+        There are two objectives considered in the optimization. First, the
+        fraction of all the cloth edge pixels found with the Canny method that are
+        contained within the quadrilateral defined by the four corners. Second,
+        the total number of pixels contained within the quadrilateral. The
+        latter is minimized while the former is constrained to be no less than
+        an initialization structure (see below). The former fraction should be
+        very close to 1.0.
+
+        The initialization structure for the corners is guessed in the method
+        `_edge_counding_corners`.
+
+        '''
         def eval_state_(corners):
 
             sides = self._make_sides(corners)
@@ -303,6 +445,9 @@ class Table:
             if k_nada > break_step:
                 break
 
+        #
+        # Debug printing of image in which corners, sides and Canny cloth edges
+        # are shown in the input colour image
         if self.print_intermediate_img:
             fig_ = copy.deepcopy(self.img_obj)
             for pp_x, pp_y in p_edges:
@@ -337,12 +482,17 @@ class Table:
         print (img_table)
         print (len(img_table))
 
-    def __init__(self, img_path,
-                 print_intermediate_img=True, img_out_prefix='dummy'):
+    def __init__(self, img_path, corners=None,
+                 print_intermediate_img=True, img_out_prefix='debug'):
 
         #
-        # Path to file
+        # Path to file to discover Table in
         self.img_path = img_path
+
+        #
+        # Debug and constants
+        self.print_intermediate_img = print_intermediate_img
+        self.img_out_prefix = img_out_prefix
 
         #
         # Read the image data and put into proper object
@@ -361,15 +511,11 @@ class Table:
         else:
             raise FileFormatError('Image {0} yields '.format(self.img_path) + \
                                   'image data of wrong shape')
+
         self.img_obj = util.img_as_float(rgb_image)
         self.img_height = self.img_obj.shape[0]
         self.img_width = self.img_obj.shape[1]
         self.img_n_pixels = self.img_height * self.img_width
-
-        #
-        # Debug and constants
-        self.print_intermediate_img = print_intermediate_img
-        self.img_out_prefix = img_out_prefix
 
         #
         # Guess the cloth colour
@@ -380,9 +526,17 @@ class Table:
             io.imsave(self.img_out_prefix + '_cloth_luminance.png', self.cloth_luminance)
 
         #
-        # Guess the corner coordinates
-        self.n_corners = 4
-        self.corners = self._optimize_corners()
+        # Set or discover corners for reference image
+        if not corners is None:
+            if not isinstance(corners, ClothCorners):
+                raise TypeError('Corners must be of type ClothCorners')
+            self.corners = corners
+
+        else: 
+            self.corners = self._optimize_corners()
+
+        # 
+        # Construct additional table data
         self.sides = self._make_sides(self.corners)
         self.table_indeces = self._make_table_indeces(self.sides)
 
@@ -390,4 +544,5 @@ class Table:
 if __name__ == '__main__':
 
     table = Table('../test_data/fig_snooker_1.PNG')
+    print (table.corners)
     table.find_balls('../test_data/fig_snooker_1.PNG')
