@@ -336,7 +336,7 @@ class Table:
         return np.min(reduced_points, axis=0)[1], \
                np.max(reduced_points, axis=0)[1]
 
-    def _optimize_corners(self, max_jump=4, max_steps=300, break_step=40, temp_init=1000.0): 
+    def _optimize_corners(self, max_jump=4, max_steps=500, break_step=64, temp_init=1000.0): 
         '''Determine optimal table corner positions in image
 
         Parameters
@@ -406,7 +406,7 @@ class Table:
 
             corners_old = copy.deepcopy(corners)
 
-            cc = list(corners)[np.random.randint(0, 4)]
+            cc = list(corners)[k_iter % 4]
             cc += np.random.randint(-1 * max_jump, max_jump + 1, 2)
 
             table_state, sides = eval_state_(corners)
