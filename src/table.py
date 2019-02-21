@@ -129,89 +129,6 @@ class Table:
         return ClothCorners(c_00_extreme_corner, c_01_extreme_corner,
                             c_10_extreme_corner, c_11_extreme_corner)
 
-    def _guess_corners(self, cluster_thrs=20):
-
-        dd = feature.corner_shi_tomasi(self.cloth_luminance)
-        peaks = feature.corner_peaks(dd, min_distance=1)
-
-        if self.print_intermediate_img:
-            fig_corners = copy.deepcopy(self.img_obj)
-            for pp_x, pp_y in peaks: 
-                for kk in range(-3,4):
-                    fig_corners[pp_x + kk][pp_y + kk] = np.array((1.0, 1.0, 0.0))
-                    fig_corners[pp_x + kk][pp_y - kk] = np.array((1.0, 1.0, 0.0))
-            io.imsave(self.img_out_prefix + '_shi_corners_marked.png', fig_corners)
-
-        ee = feature.canny(self.cloth_luminance, sigma=3.0)
-        p_edges = np.argwhere(ee == True)
-        fig = copy.deepcopy(self.img_obj)
-        for pp_x, pp_y in p_edges:
-            fig[pp_x][pp_y] = np.array((1.0, 0.2, 1.0))
-        io.imsave(self.img_out_prefix + '_edges_marked.png', fig)
-
-        d_upper_left_min = self.img_height + self.img_width
-        d_lower_left_min = self.img_height + self.img_width
-        d_upper_right_min = self.img_height + self.img_width
-        d_lower_right_min = self.img_height + self.img_width
-        for pp in peaks:
-            
-            d_upper_left = np.linalg.norm(pp - np.array([0, 0]))
-            d_upper_right = np.linalg.norm(pp - np.array([0, self.img_width]))
-            d_lower_left = np.linalg.norm(pp - np.array([self.img_height, 0]))
-            d_lower_right = np.linalg.norm(pp - np.array([self.img_height, self.img_width]))
-
-            if d_upper_left < d_upper_left_min:
-                d_upper_left_min = d_upper_left
-                c_00 = pp
-            if d_upper_right < d_upper_right_min:
-                d_upper_right_min = d_upper_right
-                c_01 = pp
-            if d_lower_left < d_lower_left_min:
-                d_lower_left_min = d_lower_left
-                c_10 = pp
-            if d_lower_right < d_lower_right_min:
-                d_lower_right_min = d_lower_right
-                c_11 = pp
-
-        c_upper_left = []
-        c_upper_right = []
-        c_lower_left = []
-        c_lower_right = []
-        for pp in peaks:
-
-            d_upper_left = np.linalg.norm(pp - c_00)
-            d_upper_right = np.linalg.norm(pp - c_01)
-            d_lower_left = np.linalg.norm(pp - c_10)
-            d_lower_right = np.linalg.norm(pp - c_11)
-
-            if d_upper_left < cluster_thrs:
-                c_upper_left.append(pp)
-            if d_upper_right < cluster_thrs:
-                c_upper_right.append(pp)
-            if d_lower_left < cluster_thrs:
-                c_lower_left.append(pp)
-            if d_lower_right < cluster_thrs:
-                c_lower_right.append(pp)
-
-        c_00_extreme_corner = np.min(np.array(c_upper_left), axis=0)
-        c_11_extreme_corner = np.max(np.array(c_lower_right), axis=0)
-        c_01_extreme_corner = np.array([np.min(np.array(c_upper_right), axis=0)[0],
-                                        np.max(np.array(c_upper_right), axis=0)[1]])
-        c_10_extreme_corner = np.array([np.max(np.array(c_lower_left), axis=0)[0],
-                                        np.min(np.array(c_lower_left), axis=0)[1]])
-
-#        if self.print_intermediate_img:
-#            fig_corners = copy.deepcopy(self.img_obj)
-#            for pp_x, pp_y in [c_00_extreme_corner, c_01_extreme_corner, \
-#                               c_10_extreme_corner, c_11_extreme_corner]:
-#                for kk in range(-3,4):
-#                    fig_corners[pp_x + kk][pp_y + kk] = np.array((1.0, 0.3, 1.0))
-#                    fig_corners[pp_x + kk][pp_y - kk] = np.array((1.0, 0.3, 1.0))
-#            io.imsave(self.img_out_prefix + '_extreme_corners_marked.png', fig_corners)
-
-        return c_00_extreme_corner, c_01_extreme_corner, \
-               c_10_extreme_corner, c_11_extreme_corner
-
     def _manhattan_line(self, p_a, p_b):
 
         diff = p_b - p_a
@@ -245,25 +162,6 @@ class Table:
             line.append(list(p_current))
 
         return np.array(line)
-
-#    def _make_rectangle(self, horizont_low, horizont_high,
-#                              vertical_low, vertical_high):
-#
-#        if horizont_low == horizont_high or vertical_low == vertical_high:
-#            return None
-#
-#        if horizont_low > horizont_high:
-#            raise ValueError('Horizontal high value less than low value')
-#        if vertical_low > vertical_high:
-#            raise ValueError('Vertical high value less than low value')
-#
-#        width = np.arange(horizont_low, horizont_high + 1)
-#        height = np.arange(vertical_low, vertical_high + 1)
-#
-#        rectangle = [np.repeat(width, 1 + vertical_high - vertical_low),
-#                     np.tile(height, 1 + horizont_high - horizont_low)]
-#
-#        return rectangle
 
     def _make_table_indeces(self, sides, exclude_boundary=False):
 
@@ -422,32 +320,6 @@ class Table:
 
         return corners_current 
 
-    def find_table(self):
-
-        seg_arrays_fz = segmentation.felzenszwalb(self.img_obj, 
-                                                  scale=1000,
-                                                  sigma=0.5, min_size=50)
-        seg_arrays_slic = segmentation.slic(self.img_obj,
-                                            n_segments=10, compactness=1,
-                                            sigma=1)
-        seg_arrays_sliz = segmentation.slic(self.img_obj,
-                                            n_segments=15, compactness=1,
-                                            sigma=0.2)
-        gradient = filters.sobel(color.rgb2gray(self.img_obj))
-        seg_arrays_water = segmentation.watershed(gradient, 
-                                                  markers=50,
-                                                  compactness=0.0001)
-
-        fig, ax = plt.subplots(2, 2, figsize=(10, 10), sharex=True, sharey=True)
-        ax[0, 0].imshow(segmentation.mark_boundaries(self.img_obj, seg_arrays_fz))
-        ax[0, 1].imshow(segmentation.mark_boundaries(self.img_obj, seg_arrays_slic))
-        ax[1, 0].imshow(segmentation.mark_boundaries(self.img_obj, seg_arrays_sliz))
-        ax[1, 1].imshow(segmentation.mark_boundaries(self.img_obj, seg_arrays_water))
-        for a in ax.ravel():
-            a.set_axis_off()
-        plt.tight_layout()
-        plt.savefig('foo.png')
-
     def __init__(self, img_path,
                  print_intermediate_img=True, img_out_prefix='dummy'):
 
@@ -501,4 +373,3 @@ class Table:
 if __name__ == '__main__':
 
     table = Table('../test_data/fig_snooker_1.PNG')
-    #table.find_table()
