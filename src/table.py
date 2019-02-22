@@ -9,7 +9,8 @@ from scipy import spatial
 import matplotlib.pyplot as plt
 
 import skimage
-from skimage import io, segmentation, util, filters, feature, color
+from skimage import io, transform, segmentation, draw, \
+                    util, filters, feature, color
 
 from sklearn.cluster import KMeans 
 from sklearn.utils import shuffle
@@ -32,6 +33,28 @@ ClothSides = namedtuple('ClothSides',
 
 class FileFormatError(Exception):
     pass
+
+class Balls:
+
+    def __init__(self, pixels, pixels_lum):
+        
+        print (pixels.shape)
+        edges = feature.canny(pixels_lum, sigma=2.0)
+        p_edges = np.argwhere(edges == True)
+        hough_radii = np.arange(4, 9, 1)
+        hough_res = transform.hough_circle(edges, hough_radii)
+        accums, cx, cy, radii = transform.hough_circle_peaks(hough_res, hough_radii, total_num_peaks=8)
+        print (accums, cx, cy, radii)
+
+        for pp_x, pp_y in p_edges:
+            pixels[pp_x, pp_y] = (1.0, 0.0, 1.0) 
+
+        for pp_x, pp_y, radius in zip(cx, cy, radii):
+            c_x, c_y = draw.circle_perimeter(pp_x, pp_y, radius)
+            for px, py in zip(c_x, c_y):
+                pixels[py][px] = (0.0, 1.0, 1.0)
+
+        io.imsave('tmp.png', pixels)
 
 class Table:
 
@@ -323,7 +346,19 @@ class Table:
         return cloth_pixels_topbottom, cloth_pixels_leftright
 
     def _make_sides(self, corners):
+        '''Derive the pixels of the cloth given four corners
 
+        Parameters
+        ----------
+        corners : ClothCorners
+            The four corners of the table cloth
+
+        Returns
+        -------
+        sides : ClothSides
+            The array of pixels that make up the sides of the cloth
+
+        '''
         sides = ClothSides( \
             self._manhattan_line(corners.top_left, corners.top_right),
             self._manhattan_line(corners.top_left, corners.down_left),
@@ -481,7 +516,18 @@ class Table:
                np.array([horizont_high, vertical_high])
 
     def get_rectangle(self):
-        '''Construct maximum bounding rectangle to given corners
+        '''Construct maximum bounding rectangle to given corners, that is the
+        smallest possible rectangle with sides parallel with the image sides,
+        while still containing all points of the table cloth
+
+        Returns
+        -------
+        rec_pixels_topbottom : Numpy array
+            The pixels of the image containing rectangle, vertical
+            coordinate
+        rec_pixels_leftright : Numpy array
+            The pixels of the image containing rectangle, horizontal
+            coordinate
 
         '''
         low, high = self._get_corner_extremes()
@@ -589,6 +635,17 @@ class Table:
         self.table_indeces = self._make_table_indeces(self.sides)
         self.table_rectangle_indeces = self.get_rectangle()
 
+        #
+        # Define balls object, initilization stage
+        table_pixels = self.img_obj[self.table_rectangle_indeces[0],
+                                    self.table_rectangle_indeces[1]]
+        table_lum_pixels = self.cloth_luminance[self.table_rectangle_indeces[0],
+                                                self.table_rectangle_indeces[1]]
+        low, high = self._get_corner_extremes()
+        img_table = table_pixels.reshape(1 + high[0] - low[0], 1 + high[1] - low[1], 3)
+        lum_table = table_lum_pixels.reshape(1 + high[0] - low[0], 1 + high[1] - low[1])
+        self.balls = Balls(img_table, lum_table)
+
 
 if __name__ == '__main__':
 
@@ -597,5 +654,5 @@ if __name__ == '__main__':
     corners = ClothCorners(np.array([136, 259]), np.array([135, 703]),
                            np.array([431, 170]), np.array([432, 782]))
     table = Table('../test_data/fig_snooker_1.PNG', corners=corners)
-    print ('ping')
-    table.find_balls('../test_data/fig_snooker_1.PNG')
+    #print ('ping')
+    #table.find_balls('../test_data/fig_snooker_1.PNG')
