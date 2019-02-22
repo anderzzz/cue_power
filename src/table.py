@@ -21,6 +21,9 @@ DARK_RED   = (0.5, 0.0, 0.0)
 DARK_BLUE  = (0.0, 0.0, 0.5)
 BLACK      = (0.0, 0.0, 0.0)
 WHITE      = (1.0, 1.0, 1.0)
+PINK       = (1.0, 0.8, 0.8)
+YELLOW     = (1.0, 1.0, 0.0)
+DARKER_GREEN = (0.0, 0.3, 0.0)
 
 ClothCorners = namedtuple('ClothCorners', 
                           ['top_left', 'top_right', 'down_left', 'down_right'])
@@ -465,6 +468,29 @@ class Table:
 
         return corners_current 
 
+    def _get_corner_extremes(self):
+        '''Bla bla
+
+        '''
+        horizont_low = min(self.corners.top_left[0], self.corners.top_right[0])
+        vertical_low = min(self.corners.top_left[1], self.corners.down_left[1])
+        horizont_high = max(self.corners.down_left[0], self.corners.down_right[0])
+        vertical_high = max(self.corners.top_right[1], self.corners.down_right[1])
+
+        return np.array([horizont_low, vertical_low]), \
+               np.array([horizont_high, vertical_high])
+
+    def get_rectangle(self):
+        '''Construct maximum bounding rectangle to given corners
+
+        '''
+        low, high = self._get_corner_extremes()
+        width = np.arange(low[0], high[0] + 1)
+        height = np.arange(low[1], high[1] + 1)
+
+        return [np.repeat(width, 1 + high[1] - low[1]), \
+                np.tile(height, 1 + high[0] - low[0])]
+
     def find_balls(self, img_path):
 
         raw_image = io.imread(img_path)
@@ -477,10 +503,32 @@ class Table:
 
         img_analyze = util.img_as_float(rgb_image)
 
-        img_table = img_analyze[self.table_indeces[0],
-                                self.table_indeces[1]]
-        print (img_table)
-        print (len(img_table))
+     #   print (img_analyze.shape)
+        img_table = img_analyze[self.table_rectangle_indeces[0],
+                                self.table_rectangle_indeces[1]]
+        low, high = self._get_corner_extremes()
+        img_table = img_table.reshape(1 + high[0] - low[0], 1 + high[1] - low[1], 3)
+        print (img_table.shape)
+
+        edges_pixels = feature.canny(color.rgb2grey(img_table), sigma=1.0)
+        p_edges = np.argwhere(edges_pixels == True)
+        print (p_edges.shape)
+        if self.print_intermediate_img:
+            fig_ = copy.deepcopy(img_table)
+            for pp_x, pp_y in p_edges:
+                fig_[pp_x][pp_y] = np.array((1.0, 0.2, 1.0))
+
+        io.imsave(self.img_out_prefix + '_table_edges.png', fig_)
+
+#        km_cluster = KMeans(n_clusters=8,
+#                            init=np.array([self.cloth_colour, DARK_RED, 
+#                                           DARK_BLUE, BLACK, WHITE, YELLOW, 
+#                                           PINK, DARKER_GREEN]),
+#                            n_init=1)
+#
+#        fig_sample = shuffle(img_analyze.reshape(-1, 3))[:5000]
+#        km_cluster.fit(fig_sample)
+#        print (km_cluster.cluster_centers_)
 
     def __init__(self, img_path, corners=None,
                  print_intermediate_img=True, img_out_prefix='debug'):
@@ -539,10 +587,15 @@ class Table:
         # Construct additional table data
         self.sides = self._make_sides(self.corners)
         self.table_indeces = self._make_table_indeces(self.sides)
+        self.table_rectangle_indeces = self.get_rectangle()
 
 
 if __name__ == '__main__':
 
-    table = Table('../test_data/fig_snooker_1.PNG')
-    print (table.corners)
+    #table = Table('../test_data/fig_snooker_1.PNG')
+    #print (table.corners)
+    corners = ClothCorners(np.array([136, 259]), np.array([135, 703]),
+                           np.array([431, 170]), np.array([432, 782]))
+    table = Table('../test_data/fig_snooker_1.PNG', corners=corners)
+    print ('ping')
     table.find_balls('../test_data/fig_snooker_1.PNG')
