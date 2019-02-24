@@ -515,6 +515,47 @@ class Table:
         return np.array([horizont_low, vertical_low]), \
                np.array([horizont_high, vertical_high])
 
+    def _make_coarse_grid(self, delta_pixel):
+        '''Create an initial coarse grid of table
+
+        '''
+        def side_to_side_jump(v_1, v_2, v_3, v_4):
+
+            l_1 = abs(np.sum(v_1 - v_2))
+            l_2 = abs(np.sum(v_3 - v_4))
+            if l_1 >= l_2:
+                length = l_1
+            else:
+                length = l_2
+
+            n_divide = length // delta_pixel
+            return int(round(l_1 / n_divide)), int(round(l_2 / n_divide)), n_divide
+
+        left_jump, right_jump, n_horizont = \
+            side_to_side_jump(self.corners.top_left,
+                              self.corners.down_left,
+                              self.corners.top_right,
+                              self.corners.down_right)
+        top_jump, down_jump, n_vertical = \
+            side_to_side_jump(self.corners.top_left,
+                              self.corners.top_right,
+                              self.corners.down_left,
+                              self.corners.down_right)
+
+        p_top_side = self.sides.top[np.multiply(top_jump, range(1, n_vertical))]
+        p_down_side = self.sides.down[np.multiply(down_jump, range(1, n_vertical))]
+        p_left_side = self.sides.left[np.multiply(left_jump, range(1, n_horizont))]
+        p_right_side = self.sides.right[np.multiply(right_jump, range(1, n_horizont))]
+        
+        for p_11, p_12 in zip(p_top_side, p_down_side):
+            
+            for p_21, p_22 in zip(p_left_side, p_right_side):
+
+                #COMPUTE INTERSECTION OF THE TWO LINES AND MAKE THAT GRID POINT
+                print (p_11, p_12, p_21, p_22)
+
+            raise RuntimeError
+
     def get_rectangle(self):
         '''Construct maximum bounding rectangle to given corners, that is the
         smallest possible rectangle with sides parallel with the image sides,
@@ -634,6 +675,7 @@ class Table:
         self.sides = self._make_sides(self.corners)
         self.table_indeces = self._make_table_indeces(self.sides)
         self.table_rectangle_indeces = self.get_rectangle()
+        self.coarse_grid = self._make_coarse_grid(25)
 
         #
         # Define balls object, initilization stage
