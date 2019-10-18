@@ -1,2 +1,2 @@
 # cue_power
-Just stuff presently
+Early outlines of image analysis of snooker. Highly incomplete.
